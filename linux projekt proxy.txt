@@ -1,0 +1,99 @@
+Technisches Dokumentations-Protokoll: Lokale Cloud-Infrastruktur & Reverse Proxy
+1. Übersicht & Zielsetzung
+Ziel dieses Projekts war der Aufbau, die Absicherung und die Fehlerbehebung einer funktionalen, lokalen Cloud-Infrastruktur auf Basis von Ubuntu Server, Docker Compose und Nginx Proxy Manager (NPM). Die Infrastruktur dient als Lern- und Testumgebung für typische Aufgabengebiete eines Fachinformatikers für Systemintegration (FISI).
+
+2. Netzwerkinformationen & Dienste
+Server-IP (Ubuntu VM): 192.168.178.xx
+
+Zugriff: SSH (Bridged Networking)
+
+Bereitgestellte Container & Ports:
+
+Nextcloud App: Port 8080 (Zugriff via Web)
+
+MariaDB: Port 3306 (Internes Datenbank-Backend)
+
+Nginx Proxy Manager Dashboard: Port 81 (Admin-Interface)
+
+Nginx HTTP/HTTPS Entrypoints: Ports 80 und 443
+
+Interne Kommunikation: Docker Bridge Network (proxy-net)
+
+3. Durchgeführte Schritte & Fehlerbehebungen
+Schritt 1: System-Initialisierung & Zeitsynchronisation (TLS Fix)
+Bei der Bereitstellung von Nextcloud und NPM kam es anfänglich zu TLS-Handshake-Fehlern (x509: certificate signed by unknown authority / Zeitabweichungen).
+
+Ursache: Die Systemzeit der VM wich von der Echtzeit ab.
+
+Lösung: Synchronisation und Prüfung der Systemzeit mittels systemd-timesyncd.
+
+Bash
+# Prüfung der aktuellen Systemzeit und NTP-Synchronisation
+timedatectl status
+
+# Falls nicht aktiv: NTP-Synchronisation erzwingen
+sudo timedatectl set-ntp true
+Schritt 2: Container-Bereitstellung mit Docker Compose
+Es wurden zwei getrennte Stacks aufgesetzt: Nextcloud mit MariaDB sowie der Nginx Proxy Manager.
+
+Überprüfung der laufenden Container:
+Bash
+# Anzeigen aller aktiven Container und deren Port-Mappings
+docker ps
+Ergebnis:
+
+npm-app-1: Ports 80, 81, 443
+
+nextcloud-app-1: Port 8080 -> 80/tcp
+
+nextcloud-db-1: Port 3306/tcp
+
+Docker-Netzwerkprüfung:
+Damit Reverse Proxy und Webdienste isoliert, aber untereinander erreichbar sind, wurden sie in ein gemeinsames Netzwerk eingebunden.
+
+Bash
+# Anzeigen aller Docker-Netzwerke
+docker network ls
+
+# Detailprüfung des Proxy-Netzwerks
+docker network inspect proxy-net
+Schritt 3: Nginx Proxy Manager (NPM) Konfiguration
+Im Dashboard des NPM ([http://192.168.178.xx:xx](http://192.168.178.xx:xx)) wurde ein Proxy Host für den lokalen Wirt eingerichtet:
+
+Domain Name: nextcloud.local (Eingabe per Enter als Tag bestätigt)
+
+Scheme: http
+
+Forward Hostname / IP: nextcloud-app-1 (interne Docker-Container-Name)
+
+Forward Port: 8080 (Anpassung, da Nextcloud extern über Port 8080 gebunden war)
+
+Websockets Support: Aktiviert (für Benachrichtigungen und Live-Updates)
+
+Schritt 4: Lokale DNS-Auflösung & Antiviren-Analyse (Windows hosts)
+Um nextcloud.local im Browser des Host-Computers aufzurufen, musste die IP-Adresse dem Hostnamen zugewiesen werden.
+
+Konfiguration in Windows (C:\Windows\System32\drivers\etc\hosts):
+Plaintext
+192.168.178.xx    nextcloud.local
+Sicherheits-Analyse & Troubleshooting:
+Problem: Das Abspeichern der hosts-Datei wurde durch den Host-basierten Antivirenschutz (Avira) und Windows-Zugriffsrechte blockiert.
+
+Hintergrund (Security Aspect): Antiviren-Software schützt die hosts-Datei streng vor Schreibzugriffen, um Drive-By-Downloads und DNS-Hijacking durch Ransomware zu verhindern.
+
+Lösungsansatz:
+
+Temporäre Pausierung des Echtzeitschutzes / Antivirus-Host-Frameworks ausschließlich für die Dauer des Speichervorgangs (kontrollierte Testumgebung).
+
+Ausführung der Eingabeaufforderung als Administrator zur Erteilung der notwendigen Systemrechte (echo-Befehl / Ersetzen der Datei).
+
+DNS-Funktionstest via CMD:
+DOS
+# Test der Namensauflösung in der Windows CMD
+ping nextcloud.local
+4. Aktueller Status & Verifikation
+Direktzugriff Nextcloud: [http://192.168.178.xx:xx](http://192.168.178.xx:xx) (Erfolgreich getestet & voll funktionsfähig)
+
+Reverse Proxy: NPM verarbeitet Anfragen auf Ports 80/81/443.
+
+Infrastruktur Status: Alle Dienste laufen stabil im Container-Verbund.
